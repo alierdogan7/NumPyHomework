@@ -1,0 +1,2 @@
+A) In Python arrays, array slicing with [:] just returns a new array, but in NumPy it returns a reference to a slice of the actual array.
+
