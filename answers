@@ -1,2 +1,3 @@
 A) In Python arrays, array slicing with [:] just returns a new array, but in NumPy it returns a reference to a slice of the actual array.
 
+B) In NumPy there are some differences between matrices and 2D arrays. "*" operator just multiplies each element with the corresponding element in 2D array. However, when two NumPy matrix objects are multiplied, a real matrix multiplication is done.
