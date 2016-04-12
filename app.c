@@ -46,8 +46,14 @@ int main(int argc, char *argv[])
         x1 = s_alloc(400);
         x2 = s_alloc(72);
         x3 = s_alloc(193);
-        s_print();
+        void *x4 = s_alloc(200);
+        s_alloc(100);
 	s_free(x1);
+        s_free(x3);
+        s_print();
+        /*printf("closest to x3: %lx, x1: %lx\n",
+                find_closest_hole_from_back(x3),
+                find_closest_hole_from_back(x1) );*/
 	//s_free(x2);
 	//s_free(x3);
 

@@ -20,6 +20,7 @@ void set_next_hole_of( void *hole, long next_hole_add);
 void set_size_of_hole( void *hole, int size);
 void set_size_of_allocated_block( void *block, int size);
 int get_size_of_allocated_block( void *block);
+void *find_closest_hole_from_back(void *deallocated_block);
 
 int s_create (int size)
 {
@@ -85,13 +86,13 @@ void *s_alloc(int req_size)
         int unit = 12 + sizeof(long); // define the unit size
         req_size = (req_size < 64) ? 64 : req_size; 
         req_size = (req_size > 65536) ? 65536 : req_size; 
-        req_size = ((req_size / unit) + 1) * unit; 
-        req_size = req_size + 4; // additional 4-bytes just for holding size of block
+        req_size = ((req_size / unit) + 2) * unit; 
+        //req_size = req_size + 4; // additional 4-bytes just for holding size of block
         printf("new req_size: %d\n", req_size);
         
         if( curr_hole == NULL && head_hole == NULL )
         {
-            printf("We're out of space (totally!). Please try again later..");
+            printf("We're out of space (totally!). Please try again later..\n");
             return NULL;
         }
         
@@ -203,7 +204,7 @@ void *s_alloc(int req_size)
                         && curr_hole == head_hole )
                 {
                     //so.. there's no hope :(
-                    printf("We're out of space. Try again later..");
+                    printf("We're out of space. Try again later..\n");
                     return NULL;
                 }
                 // if there isn't a next hole anymore
@@ -230,6 +231,56 @@ void s_free(void *objectptr)
 
         printf("Deallocating block %lx , block size: %d\n",
                 (long) (objectptr - 4), get_size_of_allocated_block(objectptr));
+        
+        //if there has been no hole until now
+        if ( head_hole == NULL && curr_hole == NULL )
+        {
+            // make this block the head hole
+            head_hole = curr_hole = objectptr - 4;
+            
+            // new hole points to itself
+            set_params_of_curr_hole( (long) curr_hole, 
+                                    get_size_of_allocated_block( objectptr));
+        }
+        //if there have been holes 
+        else
+        {
+            void *closest_hole = NULL;
+            // and every hole is above the space to be freed
+            if( (closest_hole = find_closest_hole_from_back( objectptr)) == NULL )
+            {
+                // adjust our new hole, it becomes the new head hole
+                // new hole points to the old head hole
+                set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
+                set_next_hole_of(objectptr - 4, (long) head_hole );
+                head_hole = objectptr - 4;
+            }
+            else
+            {
+                // and every hole is below the space to be freed
+                if( closest_hole == get_next_hole_of(closest_hole) )
+                {
+                    // set our deallocated space as the next hole of the closest hole
+                    set_next_hole_of(closest_hole, (long) objectptr - 4);
+            
+                    // adjust our new hole
+                    set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
+                    set_next_hole_of(objectptr - 4, (long) (objectptr - 4) );
+                }
+                // and the space to be freed is between holes
+                else
+                {
+                    void *next = get_next_hole_of(closest_hole);
+                    
+                    // set our deallocated space as the next hole of the closest hole
+                    set_next_hole_of(closest_hole, (long) objectptr - 4);
+            
+                    // adjust our new hole
+                    set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
+                    set_next_hole_of(objectptr - 4, (long) next );
+                }
+            }
+        }
 	return;
 }
 
@@ -238,16 +289,23 @@ void s_print(void)
 	printf("s_print called\n");
         
         //starting from the head hole, print out the entire hole list
-        void *tmp_hole = NULL;
-        void *prev = NULL;
-        for( tmp_hole = head_hole; 
-                tmp_hole != NULL &&
-                prev != (tmp_hole = get_next_hole_of(tmp_hole)); 
-                prev = tmp_hole )
-        {
-            printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
+        void *tmp_hole = head_hole;
+
+        do {
+            if( tmp_hole != NULL )
+            {
+                printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
                     (long) tmp_hole, get_size_of_hole(tmp_hole), 
                     (long) get_next_hole_of(tmp_hole));
+                tmp_hole = get_next_hole_of(tmp_hole);
+            }
+        } while ( tmp_hole - get_next_hole_of(tmp_hole) != 0);
+
+        if( tmp_hole != NULL )
+        {
+            printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
+                (long) tmp_hole, get_size_of_hole(tmp_hole), 
+                (long) get_next_hole_of(tmp_hole));
         }
         
 	return;
@@ -285,7 +343,7 @@ int get_size_of_allocated_block( void *block)
 
 int get_size_of_hole( void *hole)
 {
-    int sz = *((int*) (curr_hole + 8));
+    int sz = *((int*) (hole + 8));
     return sz;
 }
 
@@ -297,15 +355,26 @@ void *get_next_hole_of( void *hole)
 
 void *find_closest_hole_from_back(void *deallocated_block)
 {
+    printf("Closest hole search function called\n");
+    
     void *tmp_hole = NULL;
-        void *prev = NULL;
-        for( tmp_hole = head_hole; 
-                tmp_hole != NULL &&
-                prev != (tmp_hole = get_next_hole_of(tmp_hole)); 
-                prev = tmp_hole )
-        {
-            printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
+    for( tmp_hole = head_hole; 
+            tmp_hole != NULL
+            && deallocated_block - get_next_hole_of(tmp_hole) > 0
+            && tmp_hole - get_next_hole_of(tmp_hole) != 0;
+            tmp_hole = get_next_hole_of(tmp_hole) );    
+    
+    // if the resulting hole is behind our block, return it
+    if( deallocated_block - tmp_hole > 0 )
+    {
+        /*printf("Closest Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
                     (long) tmp_hole, get_size_of_hole(tmp_hole), 
-                    (long) get_next_hole_of(tmp_hole));
-        }
+                    (long) get_next_hole_of(tmp_hole));*/
+
+        return tmp_hole;    
+    }
+    // otherwise it means our block didn't have any hole behind it
+    else 
+        return NULL;
+    
 }
