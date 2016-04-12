@@ -44,11 +44,10 @@ int main(int argc, char *argv[])
 	//x3 = s_alloc(1300);
 
         x1 = s_alloc(400);
-        x2 = s_alloc(372);
+        x2 = s_alloc(72);
         x3 = s_alloc(193);
-        x1 = s_alloc(193);
-        
-	//s_free(x1);
+        s_print();
+	s_free(x1);
 	//s_free(x2);
 	//s_free(x3);
 

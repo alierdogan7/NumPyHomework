@@ -17,7 +17,9 @@ void set_params_of_curr_hole( long next_hole_add, int hole_size);
 int get_size_of( void *hole);
 void *get_next_hole_of( void *hole);
 void set_next_hole_of( void *hole, long next_hole_add);
-void set_size_of( void *hole, int size);
+void set_size_of_hole( void *hole, int size);
+void set_size_of_allocated_block( void *block, int size);
+int get_size_of_allocated_block( void *block);
 
 int s_create (int size)
 {
@@ -65,7 +67,7 @@ int s_create (int size)
 		cptr[i] = 0;*/
         
         long nextadd = (long) get_next_hole_of(curr_hole);// long nextadd = *((long*)curr_hole);
-        int sz = get_size_of(curr_hole); //int sz = *((int*) (curr_hole + 8));
+        int sz = get_size_of_hole(curr_hole); //int sz = *((int*) (curr_hole + 8));
         printf( "next_hole address: %lu - size: %d\n", nextadd, sz);
 	printf("---segment test ended - success\n");
 	
@@ -84,6 +86,7 @@ void *s_alloc(int req_size)
         req_size = (req_size < 64) ? 64 : req_size; 
         req_size = (req_size > 65536) ? 65536 : req_size; 
         req_size = ((req_size / unit) + 1) * unit; 
+        req_size = req_size + 4; // additional 4-bytes just for holding size of block
         printf("new req_size: %d\n", req_size);
         
         if( curr_hole == NULL && head_hole == NULL )
@@ -96,7 +99,7 @@ void *s_alloc(int req_size)
         void *search_starting_hole = curr_hole;
         void *prev_hole = NULL;
         do {
-            int curr_hole_size = get_size_of(curr_hole);
+            int curr_hole_size = get_size_of_hole(curr_hole);
 
             // if we find a hole greater than requested space
             // just truncate the hole and return the requested amount of it
@@ -139,7 +142,13 @@ void *s_alloc(int req_size)
                 }
                 
                 printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
-                        (long)allocated, (long) curr_hole, get_size_of(curr_hole));
+                        (long)allocated, (long) curr_hole, get_size_of_hole(curr_hole));
+                
+                //We're doing something a little bit different.
+                //We're setting the size of allocated block into its bytes btw 8,11
+                //And returning an address starting from right after the size field
+                set_size_of_allocated_block(allocated, req_size);
+                allocated = allocated + 4;
                 return allocated;
                 //curr_hole = ((void*) (next_hole_add + req_size));
             }
@@ -180,8 +189,10 @@ void *s_alloc(int req_size)
                     printf("I'm allocating from address %lx, no new hole, memory full.", (long)allocated );
                 else
                     printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
-                        (long)allocated, (long) curr_hole, get_size_of(curr_hole));
+                        (long)allocated, (long) curr_hole, get_size_of_hole(curr_hole));
     
+                set_size_of_allocated_block(allocated, req_size);
+                allocated = allocated + 4;
                 return allocated;
             }
             // if this hole is smaller than the requested space
@@ -215,8 +226,10 @@ void *s_alloc(int req_size)
 void s_free(void *objectptr)
 {
 
-	printf("s_free called\n");
+	printf("s_free called with objectptr:%lx\n", (long) objectptr);
 
+        printf("Deallocating block %lx , block size: %d\n",
+                (long) (objectptr - 4), get_size_of_allocated_block(objectptr));
 	return;
 }
 
@@ -224,11 +237,18 @@ void s_print(void)
 {
 	printf("s_print called\n");
         
-        int block_size = 0;
-        void *block_ptr = NULL;
-        
-        while ( )
-        
+        //starting from the head hole, print out the entire hole list
+        void *tmp_hole = NULL;
+        void *prev = NULL;
+        for( tmp_hole = head_hole; 
+                tmp_hole != NULL &&
+                prev != (tmp_hole = get_next_hole_of(tmp_hole)); 
+                prev = tmp_hole )
+        {
+            printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
+                    (long) tmp_hole, get_size_of_hole(tmp_hole), 
+                    (long) get_next_hole_of(tmp_hole));
+        }
         
 	return;
 }
@@ -237,7 +257,7 @@ void s_print(void)
 void set_params_of_curr_hole( long next_hole_add, int hole_size)
 {
     set_next_hole_of( curr_hole, next_hole_add);
-    set_size_of(curr_hole, hole_size);
+    set_size_of_hole(curr_hole, hole_size);
 }
 
 void set_next_hole_of( void *hole, long next_hole_add)
@@ -245,13 +265,25 @@ void set_next_hole_of( void *hole, long next_hole_add)
     *((long*)hole) = next_hole_add; //put next hole ptr to first 8 bytes of hole
 }
 
-void set_size_of( void *hole, int size)
+void set_size_of_hole( void *hole, int size)
 {
     *((int*) (hole + 8)) = size; // put the size info to the bytes between 8 & 11
 
 }
 
-int get_size_of( void *hole)
+void set_size_of_allocated_block( void *block, int size)
+{
+    *( (int*) block) = size; // put the block size into block's first 4 bytes
+}
+
+int get_size_of_allocated_block( void *block)
+{
+    //the actual block contains a 4-byte size value in 4-bytes back
+    int sz = * ( (int*) (block - 4)); 
+    return sz;
+}
+
+int get_size_of_hole( void *hole)
 {
     int sz = *((int*) (curr_hole + 8));
     return sz;
@@ -263,3 +295,17 @@ void *get_next_hole_of( void *hole)
      return (void*) nextadd;
 }
 
+void *find_closest_hole_from_back(void *deallocated_block)
+{
+    void *tmp_hole = NULL;
+        void *prev = NULL;
+        for( tmp_hole = head_hole; 
+                tmp_hole != NULL &&
+                prev != (tmp_hole = get_next_hole_of(tmp_hole)); 
+                prev = tmp_hole )
+        {
+            printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
+                    (long) tmp_hole, get_size_of_hole(tmp_hole), 
+                    (long) get_next_hole_of(tmp_hole));
+        }
+}
