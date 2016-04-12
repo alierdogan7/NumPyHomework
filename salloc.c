@@ -83,7 +83,7 @@ void *s_alloc(int req_size)
         int unit = 12 + sizeof(long); // define the unit size
         req_size = (req_size < 64) ? 64 : req_size; 
         req_size = (req_size > 65536) ? 65536 : req_size; 
-        req_size = ((req_size / unit) + 1) * unit;
+        req_size = ((req_size / unit) + 1) * unit; 
         printf("new req_size: %d\n", req_size);
         
         if( curr_hole == NULL && head_hole == NULL )
@@ -96,7 +96,6 @@ void *s_alloc(int req_size)
         void *search_starting_hole = curr_hole;
         void *prev_hole = NULL;
         do {
-            long next_hole_add = (long) get_next_hole_of(curr_hole);
             int curr_hole_size = get_size_of(curr_hole);
 
             // if we find a hole greater than requested space
@@ -106,22 +105,40 @@ void *s_alloc(int req_size)
                 void *allocated = curr_hole;
                 
                 // if that was the first and only hole
-                if ( curr_hole == head_hole)
+                if ( curr_hole == get_next_hole_of(curr_hole)
+                        && curr_hole == head_hole )
                 {
                     curr_hole = curr_hole + req_size;
+                    
+                    //update our new smaller hole's attributes
+                    //make the next hole field point to itself again
+                    set_params_of_curr_hole( (long) curr_hole, 
+                                             curr_hole_size - req_size);
+                    
                     head_hole = curr_hole;
                 }
                 // if it was one of the numerous holes
                 // set the next_hole ptr. of previous hole accordingly
                 else
                 {
+                    // and if it was the last hole
+                    int is_last_hole = 
+                        ( curr_hole == get_next_hole_of(curr_hole) ) ? 1 : 0;
+
                     curr_hole = curr_hole + req_size;
-                    set_next_hole_of(prev_hole, curr_hole);
+                    
+                    //if last --> make the next hole field point to itself again
+                    // else point to the next hole of old hole
+                    long next_add = (is_last_hole) ? 
+                                        (long) curr_hole
+                                        : (long) get_next_hole_of(curr_hole);
+                    
+                    //update our new smaller hole's attributes
+                    set_params_of_curr_hole( next_add, curr_hole_size - req_size);
+                    set_next_hole_of(prev_hole, (long) curr_hole);
                 }
                 
-                //update our new smaller hole's attributes
-                set_params_of_curr_hole(next_hole_add, curr_hole_size - req_size);
-                printf("I'm allocating from address %lu, new hole add: %lu and new hole size: %d\n", 
+                printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
                         (long)allocated, (long) curr_hole, get_size_of(curr_hole));
                 return allocated;
                 //curr_hole = ((void*) (next_hole_add + req_size));
@@ -155,10 +172,16 @@ void *s_alloc(int req_size)
                     {
                         prev_hole = curr_hole;
                         curr_hole = get_next_hole_of(curr_hole);
-                        set_next_hole_of(prev_hole, curr_hole);
+                        set_next_hole_of(prev_hole, (long) curr_hole);
                     }
                 }
                 
+                if( curr_hole == NULL && head_hole == NULL)
+                    printf("I'm allocating from address %lx, no new hole, memory full.", (long)allocated );
+                else
+                    printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
+                        (long)allocated, (long) curr_hole, get_size_of(curr_hole));
+    
                 return allocated;
             }
             // if this hole is smaller than the requested space
@@ -200,6 +223,13 @@ void s_free(void *objectptr)
 void s_print(void)
 {
 	printf("s_print called\n");
+        
+        int block_size = 0;
+        void *block_ptr = NULL;
+        
+        while ( )
+        
+        
 	return;
 }
 

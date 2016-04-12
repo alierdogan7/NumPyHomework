@@ -45,7 +45,8 @@ int main(int argc, char *argv[])
 
         x1 = s_alloc(400);
         x2 = s_alloc(372);
-        x3 = s_alloc(542);
+        x3 = s_alloc(193);
+        x1 = s_alloc(193);
         
 	//s_free(x1);
 	//s_free(x2);
