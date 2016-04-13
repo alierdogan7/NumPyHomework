@@ -14,13 +14,16 @@ void *curr_hole; // to link the holes with each other
 void *head_hole;
 
 void set_params_of_curr_hole( long next_hole_add, int hole_size);
-int get_size_of( void *hole);
+int get_size_of_hole( void *hole);
 void *get_next_hole_of( void *hole);
 void set_next_hole_of( void *hole, long next_hole_add);
 void set_size_of_hole( void *hole, int size);
 void set_size_of_allocated_block( void *block, int size);
 int get_size_of_allocated_block( void *block);
-void *find_closest_hole_from_back(void *deallocated_block);
+void *find_closest_hole_from_bottom(void *deallocated_block);
+int is_hole(void *block);
+void *find_neighbor_hole_of_block_from_up(void *block);
+void *find_neighbor_hole_of_block_from_down(void *block);
 
 int s_create (int size)
 {
@@ -129,20 +132,28 @@ void *s_alloc(int req_size)
                     int is_last_hole = 
                         ( curr_hole == get_next_hole_of(curr_hole) ) ? 1 : 0;
 
+                    prev_hole = find_closest_hole_from_bottom(curr_hole);
                     curr_hole = curr_hole + req_size;
                     
                     //if last --> make the next hole field point to itself again
                     // else point to the next hole of old hole
                     long next_add = (is_last_hole) ? 
                                         (long) curr_hole
-                                        : (long) get_next_hole_of(curr_hole);
+                                        : (long) get_next_hole_of(curr_hole - req_size);
                     
                     //update our new smaller hole's attributes
                     set_params_of_curr_hole( next_add, curr_hole_size - req_size);
-                    set_next_hole_of(prev_hole, (long) curr_hole);
+                    
+                    // we may be looking at a hole which is head and 
+                    // one of the numerous holes so in this case we shouldn't 
+                    // try to set prev's next hole because there is no hole as previous
+                    if( prev_hole == NULL )
+                        head_hole = curr_hole;
+                    else
+                        set_next_hole_of(prev_hole, (long) curr_hole);
                 }
                 
-                printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
+                printf("Alloc from %lx, new hole: %lx and new hole size: %d\n", 
                         (long)allocated, (long) curr_hole, get_size_of_hole(curr_hole));
                 
                 //We're doing something a little bit different.
@@ -180,16 +191,16 @@ void *s_alloc(int req_size)
                     // and that hole was in somewhere between the first and last holes
                     else
                     {
-                        prev_hole = curr_hole;
+                        prev_hole = find_closest_hole_from_bottom(curr_hole);
                         curr_hole = get_next_hole_of(curr_hole);
                         set_next_hole_of(prev_hole, (long) curr_hole);
                     }
                 }
                 
                 if( curr_hole == NULL && head_hole == NULL)
-                    printf("I'm allocating from address %lx, no new hole, memory full.", (long)allocated );
+                    printf("Alloc from %lx, no new hole, memory full.\n", (long)allocated );
                 else
-                    printf("I'm allocating from address %lx, new hole add: %lx and new hole size: %d\n", 
+                    printf("Alloc from %lx, new hole add: %lx and new hole size: %d\n", 
                         (long)allocated, (long) curr_hole, get_size_of_hole(curr_hole));
     
                 set_size_of_allocated_block(allocated, req_size);
@@ -247,25 +258,65 @@ void s_free(void *objectptr)
         {
             void *closest_hole = NULL;
             // and every hole is above the space to be freed
-            if( (closest_hole = find_closest_hole_from_back( objectptr)) == NULL )
+            if( (closest_hole = find_closest_hole_from_bottom( objectptr)) == NULL )
             {
-                // adjust our new hole, it becomes the new head hole
-                // new hole points to the old head hole
-                set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
-                set_next_hole_of(objectptr - 4, (long) head_hole );
-                head_hole = objectptr - 4;
+                void *neighbor = find_neighbor_hole_of_block_from_up(objectptr - 4 );
+                // if head node is a neighbor of our new hole, merge them
+                if (neighbor != NULL && neighbor == head_hole)
+                {
+                    // adjust our new hole, it becomes the new head hole
+                    // new hole points to the old head hole
+                    printf("merging %lx with %lx\n", (long) objectptr - 4,
+                                                    (long) neighbor);
+                    set_size_of_hole(objectptr - 4, 
+                            get_size_of_allocated_block(objectptr)
+                            + get_size_of_hole(neighbor) );
+                    
+                    //if the head hole was the only hole and pointing to itself
+                    if( get_next_hole_of(neighbor) == neighbor )
+                        set_next_hole_of(objectptr - 4, (long) objectptr - 4 );
+                    // if the head hole was pointing to another hole
+                    else
+                        set_next_hole_of(objectptr - 4, 
+                                (long) get_next_hole_of(neighbor));
+                    
+                    head_hole = objectptr - 4;                    
+                }
+                else
+                {
+                    // adjust our new hole, it becomes the new head hole
+                    // new hole points to the old head hole
+                    set_size_of_hole(objectptr - 4, 
+                            get_size_of_allocated_block(objectptr));
+                    set_next_hole_of(objectptr - 4, (long) head_hole );
+                    head_hole = objectptr - 4;  
+                }
             }
             else
             {
                 // and every hole is below the space to be freed
                 if( closest_hole == get_next_hole_of(closest_hole) )
                 {
-                    // set our deallocated space as the next hole of the closest hole
-                    set_next_hole_of(closest_hole, (long) objectptr - 4);
-            
-                    // adjust our new hole
-                    set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
-                    set_next_hole_of(objectptr - 4, (long) (objectptr - 4) );
+                    void *neighbor = find_neighbor_hole_of_block_from_down(objectptr - 4);
+                    //if the closest hole at the bottom is next to our new hole
+                    if( neighbor != NULL && neighbor == closest_hole )
+                    {
+                        // just increase the size of head hole 
+                        // by the amount of our deallocated space
+                        set_size_of_hole(neighbor, 
+                                get_size_of_hole(neighbor)
+                                + get_size_of_allocated_block(objectptr));
+                    }
+                    else
+                    {
+                        // set our deallocated space as the next hole of the closest hole
+                        set_next_hole_of(closest_hole, (long) objectptr - 4);
+
+                        // adjust our new hole
+                        set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
+                        set_next_hole_of(objectptr - 4, (long) (objectptr - 4) );
+                    }
+                   
                 }
                 // and the space to be freed is between holes
                 else
@@ -291,23 +342,18 @@ void s_print(void)
         //starting from the head hole, print out the entire hole list
         void *tmp_hole = head_hole;
 
-        do {
-            if( tmp_hole != NULL )
-            {
-                printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
-                    (long) tmp_hole, get_size_of_hole(tmp_hole), 
-                    (long) get_next_hole_of(tmp_hole));
-                tmp_hole = get_next_hole_of(tmp_hole);
-            }
-        } while ( tmp_hole - get_next_hole_of(tmp_hole) != 0);
-
-        if( tmp_hole != NULL )
+        while ( tmp_hole != NULL )
         {
             printf("Hole address: %lx, size: %d Bytes, next hole address: %lx\n", 
-                (long) tmp_hole, get_size_of_hole(tmp_hole), 
-                (long) get_next_hole_of(tmp_hole));
+                    (long) tmp_hole, get_size_of_hole(tmp_hole), 
+                    (long) get_next_hole_of(tmp_hole));
+                
+            if ( tmp_hole - get_next_hole_of(tmp_hole) != 0 )
+                tmp_hole = get_next_hole_of(tmp_hole);
+            else
+                break;
         }
-        
+                
 	return;
 }
 
@@ -351,11 +397,48 @@ void *get_next_hole_of( void *hole)
 {
      long nextadd = *((long*)hole);
      return (void*) nextadd;
+} 
+
+void *find_neighbor_hole_of_block_from_down(void *block)
+{
+    void *neighbor = find_closest_hole_from_bottom(hole);
+    if( neighbor != NULL && hole == neighbor + get_size_of_allocated_block(neighbor) )
+        return neighbor;
+    else
+        return NULL;
 }
 
-void *find_closest_hole_from_back(void *deallocated_block)
+void *find_neighbor_hole_of_block_from_up(void *block)
 {
-    printf("Closest hole search function called\n");
+    // if the next block is a hole, return its address
+    void *neighbor = hole + get_size_of_allocated_block(hole);
+    if ( is_hole( neighbor ))
+        return neighbor;
+    else
+        return NULL;
+}
+
+int is_hole(void *block)
+{
+    void *tmp_hole = NULL;
+    for( tmp_hole = head_hole;
+        tmp_hole != NULL;
+        tmp_hole = get_next_hole_of(tmp_hole) )
+    {
+        // the block is found in hole list
+        if (tmp_hole == block )
+            return 1;
+        //reached the end of hole list
+        else if( tmp_hole == get_next_hole_of(tmp_hole) )
+            break;
+        
+    }
+    return 0;
+}
+
+void *find_closest_hole_from_bottom(void *deallocated_block)
+{
+    //printf("Closest hole search function called\n");
     
     void *tmp_hole = NULL;
     for( tmp_hole = head_hole; 
