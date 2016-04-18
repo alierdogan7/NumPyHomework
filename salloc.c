@@ -13,6 +13,11 @@ int segmentsize;  // size of segment to manage
 void *curr_hole; // to link the holes with each other
 void *head_hole;
 
+// for synchronization
+pthread_mutex_t lock;
+pthread_mutex_t credit_lock;
+int credit = 1;
+
 void set_params_of_curr_hole( long next_hole_add, int hole_size);
 int get_size_of_hole( void *hole);
 void *get_next_hole_of( void *hole);
@@ -24,6 +29,8 @@ void *find_closest_hole_from_bottom(void *deallocated_block);
 int is_hole(void *block);
 void *find_neighbor_hole_of_block_from_up(void *block);
 void *find_neighbor_hole_of_block_from_down(void *block);
+void get_lock();
+void free_lock();
 
 int s_create (int size)
 {
@@ -83,7 +90,10 @@ void *s_alloc(int req_size)
 	// minimum alloc 64 B and maximum 64 KB
         // hole size, hole start, next hole address
         
-    	printf("s_alloc called with size: %d\n", req_size);
+        // SYNCHRONIZE THIS FCN. WITH S_FREE() and OTHER THREADS
+        get_lock();
+        
+	printf("s_alloc called with size: %d\n", req_size);
 
         // round the requested size to avoid unusable memory fragments
         int unit = 12 + sizeof(long); // define the unit size
@@ -96,6 +106,7 @@ void *s_alloc(int req_size)
         if( curr_hole == NULL && head_hole == NULL )
         {
             printf("We're out of space (totally!). Please try again later..\n");
+            free_lock();
             return NULL;
         }
         
@@ -161,6 +172,8 @@ void *s_alloc(int req_size)
                 //And returning an address starting from right after the size field
                 set_size_of_allocated_block(allocated, req_size);
                 allocated = allocated + 4;
+                
+                free_lock(); //synchronization
                 return allocated;
                 //curr_hole = ((void*) (next_hole_add + req_size));
             }
@@ -205,6 +218,8 @@ void *s_alloc(int req_size)
     
                 set_size_of_allocated_block(allocated, req_size);
                 allocated = allocated + 4;
+                
+                free_lock(); //synchronization
                 return allocated;
             }
             // if this hole is smaller than the requested space
@@ -216,6 +231,7 @@ void *s_alloc(int req_size)
                 {
                     //so.. there's no hope :(
                     printf("We're out of space. Try again later..\n");
+                    free_lock(); //synchronization
                     return NULL;
                 }
                 // if there isn't a next hole anymore
@@ -235,6 +251,7 @@ void *s_alloc(int req_size)
         
         // suitable hole not found
         printf("Suitable hole not found..\n");
+        free_lock(); //synchronization
         return NULL;
 }
 
@@ -245,6 +262,8 @@ void s_free(void *objectptr)
 
         printf("Deallocating block %lx , block size: %d\n",
                 (long) (objectptr - 4), get_size_of_allocated_block(objectptr));
+        
+        get_lock(); //synchronization
         
         //if there has been no hole until now
         if ( head_hole == NULL && curr_hole == NULL )
@@ -330,12 +349,29 @@ void s_free(void *objectptr)
                     up_neighbor = find_neighbor_hole_of_block_from_up(objectptr);
                     bottom_neighbor = find_neighbor_hole_of_block_from_down(objectptr);
                     
-                    /* TODO: FILL THESE BLOCKS */
-                    
                     //merge with upper and lower holes
                     if( up_neighbor != NULL && bottom_neighbor != NULL)
                     {
+                        printf("merging %lx with %lx and %lx\n", 
+                                (long) objectptr - 4, 
+                                (long) up_neighbor, (long) bottom_neighbor);
                         
+                        int upper_hole_is_last = 0;
+                        void *next_of_upper = get_next_hole_of(up_neighbor);
+                        if( next_of_upper == up_neighbor)
+                            upper_hole_is_last = 1;
+                        
+                        int new_size = get_size_of_hole(bottom_neighbor)
+                                        + get_size_of_hole(up_neighbor)
+                                        + get_size_of_allocated_block(objectptr);
+                        
+                        set_size_of_hole(bottom_neighbor, new_size);
+                        
+                        //new merged hole becomes last hole, it will point to itself
+                        if(upper_hole_is_last)
+                            set_next_hole_of(bottom_neighbor, (long) bottom_neighbor);
+                        else
+                            set_next_hole_of(bottom_neighbor, (long) next_of_upper);
                     }
                     //merge with upper hole
                     else if( up_neighbor != NULL && bottom_neighbor == NULL)
@@ -348,7 +384,7 @@ void s_free(void *objectptr)
                         //our upper hole's prev. hole
                         void *prev_hole = find_closest_hole_from_bottom(up_neighbor);
                         //now it points to our merged hole
-                        set_next_hole_of(prev_hole, objectptr - 4); 
+                        set_next_hole_of(prev_hole, (long) objectptr - 4); 
                         
                         set_size_of_hole(objectptr - 4, 
                                 get_size_of_allocated_block(objectptr)
@@ -361,12 +397,20 @@ void s_free(void *objectptr)
                         else
                             set_next_hole_of(objectptr - 4, 
                                     (long) get_next_hole_of(up_neighbor));
-     
 
                     }
                     //merge with lower hole
                     else if( up_neighbor == NULL && bottom_neighbor != NULL)
                     {
+                        printf("merging %lx with %lx\n", (long) objectptr - 4,
+                                                        (long) bottom_neighbor);
+                        
+                        //just increase the size of the lower hole
+                        // by the size of deallocated block
+                        set_size_of_hole(bottom_neighbor, 
+                                get_size_of_allocated_block(objectptr)
+                                + get_size_of_hole(bottom_neighbor) );
+
                         
                     }
                     //do not merge with any holes
@@ -387,12 +431,15 @@ void s_free(void *objectptr)
         }
         
         printf("******************************************\n\n");
+        free_lock(); //synchronization
 	return;
 }
 
 void s_print(void)
 {
 	printf("s_print called\n");
+        
+        get_lock(); //synchronization
         
         //starting from the head hole, print out the entire hole list
         void *tmp_hole = head_hole;
@@ -408,7 +455,8 @@ void s_print(void)
             else
                 break;
         }
-                
+           
+        free_lock(); //synchronization
 	return;
 }
 
@@ -515,4 +563,23 @@ void *find_closest_hole_from_bottom(void *deallocated_block)
     else 
         return NULL;
     
+}
+
+// The functions s_alloc or s_free might be used by only one thread at a time
+void get_lock()
+{
+    pthread_mutex_lock(&credit_lock);
+    if(credit != 1)
+        pthread_mutex_lock(&lock);
+    else
+        credit = 0;
+    pthread_mutex_unlock(&credit_lock);
+}
+
+void free_lock()
+{
+    pthread_mutex_lock(&credit_lock);
+    credit = 1;
+    pthread_mutex_unlock(&lock);
+    pthread_mutex_unlock(&credit_lock);
 }

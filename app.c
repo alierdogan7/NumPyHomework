@@ -57,12 +57,15 @@ int main(int argc, char *argv[])
         s_alloc(100);*/
         
 	s_free(blocks[1]);
+        s_print();
 	s_free(blocks[3]);
-	s_free(blocks[4]);
-	s_free(blocks[11]);
-	s_free(blocks[13]);
-	s_free(blocks[15]);
-        s_free(blocks[0]);
+        s_print();
+	s_free(blocks[0]); //this will merge 0th with 1st
+        s_print();
+	s_free(blocks[7]);
+	s_free(blocks[9]);
+	s_free(blocks[12]);
+        s_free(blocks[8]); // this will merge 8th with 7th & 9th
         s_print();
         
         /* //UNIT TEST OF IS_HOLE FCN.
