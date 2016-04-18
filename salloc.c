@@ -233,12 +233,15 @@ void *s_alloc(int req_size)
             }
         } while ( curr_hole != search_starting_hole );
         
+        // suitable hole not found
+        printf("Suitable hole not found..\n");
+        return NULL;
 }
 
 void s_free(void *objectptr)
 {
 
-	printf("s_free called with objectptr:%lx\n", (long) objectptr);
+	printf("*********************************\ns_free called with objectptr:%lx\n", (long) objectptr);
 
         printf("Deallocating block %lx , block size: %d\n",
                 (long) (objectptr - 4), get_size_of_allocated_block(objectptr));
@@ -260,7 +263,7 @@ void s_free(void *objectptr)
             // and every hole is above the space to be freed
             if( (closest_hole = find_closest_hole_from_bottom( objectptr)) == NULL )
             {
-                void *neighbor = find_neighbor_hole_of_block_from_up(objectptr - 4 );
+                void *neighbor = find_neighbor_hole_of_block_from_up(objectptr );
                 // if head node is a neighbor of our new hole, merge them
                 if (neighbor != NULL && neighbor == head_hole)
                 {
@@ -297,7 +300,7 @@ void s_free(void *objectptr)
                 // and every hole is below the space to be freed
                 if( closest_hole == get_next_hole_of(closest_hole) )
                 {
-                    void *neighbor = find_neighbor_hole_of_block_from_down(objectptr - 4);
+                    void *neighbor = find_neighbor_hole_of_block_from_down(objectptr);
                     //if the closest hole at the bottom is next to our new hole
                     if( neighbor != NULL && neighbor == closest_hole )
                     {
@@ -321,17 +324,69 @@ void s_free(void *objectptr)
                 // and the space to be freed is between holes
                 else
                 {
-                    void *next = get_next_hole_of(closest_hole);
+                    void *up_neighbor;
+                    void *bottom_neighbor;
                     
-                    // set our deallocated space as the next hole of the closest hole
-                    set_next_hole_of(closest_hole, (long) objectptr - 4);
-            
-                    // adjust our new hole
-                    set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
-                    set_next_hole_of(objectptr - 4, (long) next );
+                    up_neighbor = find_neighbor_hole_of_block_from_up(objectptr);
+                    bottom_neighbor = find_neighbor_hole_of_block_from_down(objectptr);
+                    
+                    /* TODO: FILL THESE BLOCKS */
+                    
+                    //merge with upper and lower holes
+                    if( up_neighbor != NULL && bottom_neighbor != NULL)
+                    {
+                        
+                    }
+                    //merge with upper hole
+                    else if( up_neighbor != NULL && bottom_neighbor == NULL)
+                    {
+                        // adjust our new hole
+                        // new hole points to the hole
+                        printf("merging %lx with %lx\n", (long) objectptr - 4,
+                                                        (long) up_neighbor);
+                        
+                        //our upper hole's prev. hole
+                        void *prev_hole = find_closest_hole_from_bottom(up_neighbor);
+                        //now it points to our merged hole
+                        set_next_hole_of(prev_hole, objectptr - 4); 
+                        
+                        set_size_of_hole(objectptr - 4, 
+                                get_size_of_allocated_block(objectptr)
+                                + get_size_of_hole(up_neighbor) );
+
+                        //if the upper hole was the last hole and pointing to itself
+                        if( get_next_hole_of(up_neighbor) == up_neighbor )
+                            set_next_hole_of(objectptr - 4, (long) objectptr - 4 );
+                        // if the upper hole was pointing to another hole
+                        else
+                            set_next_hole_of(objectptr - 4, 
+                                    (long) get_next_hole_of(up_neighbor));
+     
+
+                    }
+                    //merge with lower hole
+                    else if( up_neighbor == NULL && bottom_neighbor != NULL)
+                    {
+                        
+                    }
+                    //do not merge with any holes
+                    else
+                    {
+                        void *next = get_next_hole_of(closest_hole);
+
+                        // set our deallocated space as the next hole of the closest hole
+                        set_next_hole_of(closest_hole, (long) objectptr - 4);
+
+                        // adjust our new hole
+                        set_size_of_hole(objectptr - 4, get_size_of_allocated_block(objectptr));
+                        set_next_hole_of(objectptr - 4, (long) next );
+                    }
+                        
                 }
             }
         }
+        
+        printf("******************************************\n\n");
 	return;
 }
 
@@ -401,8 +456,8 @@ void *get_next_hole_of( void *hole)
 
 void *find_neighbor_hole_of_block_from_down(void *block)
 {
-    void *neighbor = find_closest_hole_from_bottom(hole);
-    if( neighbor != NULL && hole == neighbor + get_size_of_allocated_block(neighbor) )
+    void *neighbor = find_closest_hole_from_bottom(block - 4);
+    if( neighbor != NULL && block == 4 + neighbor + get_size_of_hole(neighbor) )
         return neighbor;
     else
         return NULL;
@@ -411,7 +466,7 @@ void *find_neighbor_hole_of_block_from_down(void *block)
 void *find_neighbor_hole_of_block_from_up(void *block)
 {
     // if the next block is a hole, return its address
-    void *neighbor = hole + get_size_of_allocated_block(hole);
+    void *neighbor = block - 4 + get_size_of_allocated_block(block);
     if ( is_hole( neighbor ))
         return neighbor;
     else

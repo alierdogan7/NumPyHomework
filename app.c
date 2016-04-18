@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 	//x3 = s_alloc(1300);
 
         int i;
-        void *blocks[10];
+        void *blocks[20];
         for(i = 0; i < 20; ++i)
         {
             blocks[i] = s_alloc(1600 + i*i);
@@ -89,5 +89,5 @@ int main(int argc, char *argv[])
 	//s_free(x3);
 
 
-        
+        return 0;
 }
